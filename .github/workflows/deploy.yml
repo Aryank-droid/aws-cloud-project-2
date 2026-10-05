@@ -1,3 +1,4 @@
+```yaml
 name: Docker CI/CD
 
 on:
@@ -8,9 +9,10 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write
 
 jobs:
-  build-and-push:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
@@ -30,3 +32,21 @@ jobs:
           context: .
           push: true
           tags: ghcr.io/aryank-droid/cloud-project-2:latest
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Deploy to EC2 using SSM
+        run: |
+          aws ssm send-command \
+            --instance-ids "i-0601914aaf2ffbd5a" \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=[
+              "sudo docker pull ghcr.io/aryank-droid/cloud-project-2:latest",
+              "sudo docker rm -f cloud-project-2-app || true",
+              "sudo docker run -d --restart unless-stopped -p 80:80 --name cloud-project-2-app ghcr.io/aryank-droid/cloud-project-2:latest"
+            ]'
+```
