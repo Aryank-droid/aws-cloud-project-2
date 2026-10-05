@@ -1,5 +1,49 @@
-FROM nginx:alpine
+name: Docker CI/CD
 
-COPY index.html /usr/share/nginx/html/index.html
+on:
+  push:
+    branches:
+      - main
 
-EXPOSE 80
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/aryank-droid/cloud-project-2:latest
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Deploy to EC2 using SSM
+        run: |
+          aws ssm send-command \
+            --instance-ids "i-0601914aaf2ffbd5a" \
+            --document-name "AWS-RunShellScript" \
+            --parameters 'commands=[
+              "sudo docker pull ghcr.io/aryank-droid/cloud-project-2:latest",
+              "sudo docker rm -f cloud-project-2-app || true",
+              "sudo docker run -d --restart unless-stopped -p 80:80 --name cloud-project-2-app ghcr.io/aryank-droid/cloud-project-2:latest"
+            ]'
